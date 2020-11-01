@@ -1,0 +1,544 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+                      "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+  <title>Smart Pointers</title>
+  <meta name="keywords" lang="en" content="Ada, access types, safe pointers, smart pointers, reference counting" />
+  <link rel="shortcut icon" type="image/x-icon" href="Ada.ico"/>
+  <!-- Version  Date
+        7.0  12.03.2019 Severed from homepage
+        6.1  19.02.2018 Fixed link to Gems 97 and 107 
+        6.0  16.02.2018 Choice between tasksafe and sequential variant now generic
+        5.0  10.02.2018 Enable choice between tasksafe and sequential variant
+        4.0  31.07.2017 Added ToC
+        3.1  16.12.2016 Corrected typo in markup
+        3.0  18.05.2016 Made generic; add a word about task safety
+        2.6  20.05.2015 Correct HTML error
+        2.5  10.10.2012 Correct error in body of Get
+        2.4  09.10.2012 Improved text (Randy's input)
+        2.3  06.10.2012 Fixed link to Gem 123
+        2.2  30.06.2012 Forgot to add Deep_Copy to My_Smart_Indefinite_String_Pointers
+        2.1  29.06.2012 Bug fix in Generic_Indefinite_Pointers
+        2.0  28.06.2012 GNAT GPL 2012 is out (full Ada 2012)
+        1.9  30.04.2012 Correct XHTML errors
+        1.8  26.04.2012 Link to Gem #123
+        1.7  16.09.2011 Dispatching
+        1.6  09.07.2011 Preview to Ada 2012
+        1.5  09.06.2011 Added link to page with code outline
+        1.4  06.06.2011 It's Gem #107
+        1.3  31.05.2011 Code simplified (no need for if statement in Get); link to Safe_Pointers
+        1.2  22.05.2011 Added meta keywords
+        1.1  17.05.2011 Added shortcut icon Ada.ico
+        1.0  07.05.2011
+  //-->
+</head>
+<body text="#000000" bgcolor="#FFFFFF" background="../Backgrounds/Sand.gif">
+
+<h2 align="center"><font color="#800000">Smart Pointers</font></h2>
+<h4 align="center">Author: Christoph Karl Walter Grein<br />
+16<sup>th</sup> February 2018</h4>
+
+<p>Access types in Ada have been designed in a way to prevent the occurrence
+of dangling references, i.e. they can never designate objects that have
+gone out of scope. There remains however one problem:
+When Unchecked_Deallocation is used in order to reclaim storage, we might
+access already freed storage or, even worse, storage occupied by new
+objects of different types, unless utmost care is taken (this is the very
+reason why the generic is called &quot;unchecked&quot; deallocation).
+Reference counted pointers prevent these problems.</p>
+
+<p>Also see <a href="Safe_Pointers.html">Safe Pointers</a>, an alternative
+implementation.</p>
+
+<!-- ==================================================================== -->
+
+<h3 align="center"><font color="#800000">Contents</font></h3>
+
+<ul>
+<li><a href="#Basic">The Basic Package</a></li>
+<li><a href="#Dispatching">Dispatching</a></li>
+<li><a href="#Genericity">Genericity and Concurrency</a></li>
+<li><a href="#Child">Child Packages</a></li>
+<li><a href="#2012">Ada 2012</a></li>
+<li><a href="#Test">Test</a></li>
+<li><a href="#Download">Download</a></li>
+</ul>
+
+<!-- ==================================================================== -->
+
+<h3 align="center"><font color="#800000"><a name="Basic">The Basic Package</a></font></h3>
+
+<p>In the following, a package providing a reference-counted access type
+Smart_Pointer will be presented that avoids this problem.
+References to allocated data item are counted and allocations are
+automatically reclaimed when no more references exist, i.e. a user of
+this package need not care about storage deallocation, and indeed,
+the interface disables direct deallocation.
+(But beware of isolated cyclic pointer islands.)</p>
+
+<p>The design follows closely the
+<a href="http://www.adacore.com/adaanswers/gems/gem-97-reference-counting-in-ada-part-1">
+AdaCore Gem #97</a> and improves the implementation in a way that is the
+theme of <a href="http://www.adacore.com/adaanswers/gems/gem-107-preventing-deallocation-for-reference-counted-types/">
+AdaCore Gem #107</a>.</p>
+
+<p>Our smart pointers</p>
+
+<pre>  <b>type</b> Smart_Pointer <b>is private</b>;</pre>
+
+<p>store any data derived from</p>
+
+<pre>  <b>type</b> Client_Data <b>is abstract tagged private</b>;</pre>
+
+<p>We allocate a new data item with Set:</p>
+
+<pre>  <b>procedure</b> Set (Self:<b> in out</b> Smart_Pointer; Data: <b>in</b> Client_Data'Class);</pre>
+
+<p>Smart_Pointer is a controlled type which references, beside the client
+data, a counter counting the number of all pointers that currently
+reference the same data. Thus a call of Set will first clean up its
+reference: If there is a data item (after declaration, a smart pointer
+points to nothing - it is null), it decreases the counter by one, since
+it will no longer grant access to the data. If this was the only pointer
+accessing the data, the counter will now be zero and the data can safely
+be deallocated. Then a new item will be allocated holding the data and a
+counter with value 1.
+(See the <a href="http://www.adacore.com/adaanswers/gems/gem-97-reference-counting-in-ada-part-1">
+AdaCore Gem #97</a> for the details.)</p>
+
+<p>We could read and write the data with a getter:</p>
+
+<pre>  <b>function</b> Get (Self: Smart_Pointer) <b>return access</b> Client_Data'Class;</pre>
+
+<p>Let's give an example:</p>
+
+<pre>  <b>type</b> My_Data <b>is new</b> Client_Data <b>with record</b>
+    I: Integer;
+  <b>end record</b>;
+
+  Set (P, My_Data'(Client_Data <b>with</b> I =&gt; -10));
+
+  My_Data (Get (P).<b>all</b>).I := 42;</pre>
+
+<p><code>Get (P)</code> would return an access to Client_Data; thus,
+in order to access the actual data, here the integer component I, the
+access value has to be dereferenced and a view conversion to My_Data done,
+which will incur a tag check that will succeed in this example.
+In general, you have to know the type with which to view-convert in order
+to access the relevant components.</p>
+
+<p>This is all as in the Gem #97.</p>
+
+<p>However this naive implementation of Get is very dangerous, since the
+caller might hold onto the returned pointer forever &ndash; long after the
+package has freed the data.
+More generally, the package can't know how long they are using the returned
+pointer, so it can't know if it is safe to free the associated data.
+Continuing the example above:</p>
+
+<pre><span><!-- no font inside without span, why? //-->  <b>declare</b>
+    Obj: <b>access</b> Client_Data'Class := Get (P);
+  <b>begin</b>
+    My_Data (Obj.<b>all</b>).I := 2012;                  -- <i>No problem.</i>
+    Set (P, My_Data'(Client_Data <b>with</b> I =&gt; 83));  -- <i>Frees the original object,</i>
+                                                  -- <i>because the reference count</i>
+                                                  -- <i>is zero after this operation.</i>
+    <font color="#FF0000">My_Data (Obj.<b>all</b>).I := 95;                    -- <i>Oops - writing freed memory!</i></font>
+  <b>end</b>;</span></pre>
+
+<p>(A minor danger is that the caller might be tempted to free the data
+via the pointer, which is none of his business and should completely remain
+under control of the package, and thus create dangling pointers.
+But people aren't likely to free stuff they didn't create.)</p>
+
+<p>We thus direly need a safe access, which we will
+<a href="smart_pointers.ads.html" name="back">construct</a> now.
+(See the <a href="http://www.adacore.com/adaanswers/gems/gem-107-preventing-deallocation-for-reference-counted-types/">
+AdaCore Gem #107</a>.)</p>
+
+<p>So instead of returning a direct access to the data, we define an
+accessor, a limited type with such an access as a discriminant, and let
+Get return such an object:</p>
+
+<pre>  <b>type</b> Accessor (Data: <b>access</b> Client_Data'Class) <b>is limited private</b>;
+  <b>function</b>  Get (Self: Smart_Pointer) <b>return</b> Accessor;</pre>
+
+<p>Making the type limited prevents copying, and access discriminants are
+unchangeable.
+The discriminant also cannot be copied to a variable of a named access type.
+The result is that the discriminant can be used only for reading and
+writing the object (and also not for deallocation).
+Thus we have achieved our goal of making accesses safe.</p>
+
+<p>To show how to implement Get, we give the private definition of our
+smart pointers:</p>
+
+<pre>  <b>type</b> Client_Data <b>is abstract tagged record</b>
+    Count: Natural := 1;  -- <i>the reference count</i>
+  <b>end record</b>;
+
+  <b>type</b> Accessor (Data: <b>access</b> Client_Data'Class) <b>is limited null record</b>;
+
+  <b>type</b> Client_Data_Ptr <b>is access</b> Client_Data'Class;
+
+  <b>type</b> Smart_Pointer <b>is new</b> Ada.Finalization.Controlled <b>with record</b>
+    Pointer: Client_Data_Ptr;
+  <b>end record</b>;</pre>
+
+<p>The implementation of the function Get is quite straight forward:</p>
+
+<pre>  <b>function</b> Get (Self: Smart_Pointer) <b>return</b> Accessor <b>is
+  begin
+    return</b> Accessor'(Data =&gt; Self.Pointer);
+  <b>end</b> Get;</pre>
+
+<p>Alas, we are not yet completely safe. To see this, we have to consider
+in detail the lifetime of the Accessor objects.
+Let's return to the example above, now with the accessor:</p>
+
+<pre>  My_Data (Get (P).Data.<b>all</b>).I := 42;</pre>
+
+<p>Here, the lifetime of <code>Get (P)</code> ends with the statement and
+the accessor is finalized, i.e. it ceases to exist (in Ada vernacular, the
+master of the object is the statement).
+So tasking issues aside, nothing can happen to the accessed object (the
+integer in our example) while the accessor exists.</p>
+
+<p>Now consider a variant of the above.
+Imagine we have a pointer P whose reference count is 1, and let's extend
+the accessor's lifetime, like we did for the pointer before:</p>
+
+<pre><span><!-- no font inside without span, why? //-->  <b>declare</b>
+    A: Accessor <b>renames</b> Get (P);
+  <b>begin</b>
+    Set (P, ...);  -- <i>allocate a new object</i>
+    <font color="#FF0000">My_Data (A.Data.all).I := 42;  -- <i>?</i></font>
+  <b>end</b>;  -- <i>A's lifetime ends here</i></span></pre>
+
+<p>In this example, the master of the accessor is the block (and there are
+other ways to make the lifetime as long as one wishes).
+Now in the block, the pointer P is given a new object to access.
+Since we said that P was the only pointer to the old object, it's finalized
+just as with the pointer before and again with the same disastrous effect:
+<code>A.Data</code> is now a dangling pointer granting access to a
+nonexistent object until the end of the declare block.</p>
+
+<p>To cure the situation, we have to prevent the deallocation.
+That suggests increasing the reference count with the construction of an
+accessor and decreasing the count when the accessor is finalized again.
+The easiest way to accomplish this is to piggyback upon the properties of
+the smart pointer type:</p>
+
+<pre>  <b>type</b> Accessor (Data: <b>access</b> Client_Data'Class) <b>is limited record</b>
+    Hold: Smart_Pointer;
+  <b>end record</b>;
+
+  <b>function</b> Get (Self: Smart_Pointer) <b>return</b> Accessor <b>is
+  begin
+    return</b> Accessor'(Data =&gt; Self.Pointer, Hold =&gt; Self);
+  <b>end</b> Get;</pre>
+
+<p>Note by the way that when the discriminant is declared
+<b>access constant</b>, the accessor object can be used only for reading
+the data.</p>
+
+<!-- ==================================================================== -->
+
+<h4 align="center"><font color="#800000"><a name="Dispatching">Dispatching</a></font></h4>
+
+<p>Above, we saw that a type conversion is necessary for accessing the data.
+This is impractical since you have to know which type the smart pointer
+references, and this information might not be available (e.g. when retrieving
+pointers from a polymorphous list).
+Hence a better way is access via dispatching.</p>
+
+<p>Here is the visible package specification for ease of discussion:</p>
+
+<pre><b>package</b> Smart_Pointers <b>is
+
+  type</b> Client_Data <b>is abstract tagged private</b>;
+
+  <b>type</b> Accessor (Data: <b>access</b> Client_Data'Class) <b>is limited private</b>;
+
+  <b>type</b> Smart_Pointer <b>is private</b>;
+
+  <b>procedure</b> Set (Self: <b>in out</b> Smart_Pointer; Data: <b>in</b> Client_Data'Class);
+  <b>function</b>  Get (Self: Smart_Pointer) <b>return</b> Accessor;
+
+<b>private</b>
+
+  ...  -- <i>not shown</i>
+
+<b>end</b> Smart_Pointers;</pre>
+
+<p>A user's package might look like so:</p>
+
+<pre><b>with</b> Smart_Pointers;
+<b>use</b>  Smart_Pointers;
+
+<b>package</b> My_Pointers <b>is
+
+  type</b> Int_Data <b>is new</b> Client_Data <b>with record</b>
+    I: Integer;
+  <b>end record</b>;
+
+  <b>not overriding procedure</b> Work (X: <b>in out</b> Int_Data);
+
+  <b>type</b> Flt_Data <b>is new</b> Client_Data <b>with record</b>
+    F: Float;
+  <b>end record</b>;
+
+  <b>not overriding procedure</b> Work (X: <b>in out</b> Flt_Data);
+
+<b>end</b> My_Pointers;</pre>
+
+<p>The idea is to use a dispatching call to <code>Work</code> instead
+of a type conversion:</p>
+
+<pre>  Work (Int_Data (Get (P).Data.all));  -- <i>will raise Constraint_Error if Tag_Check fails</i>
+  Work (Get (P).Data.all);             -- <i>meant to dispatch</i></pre>
+
+<p>The first call is statically bound with the type conversion, just
+as in the original example.
+However, the second call is illegal because of a type mismatch.
+For dispatching to work properly, we have to derive our data types from
+a common ancestor which has a primitive operation <code>Work</code>:</p>
+
+<pre>  <b>type</b> My_Root <b>is abstract new</b> Client_Data <b>with null record</b>;
+  <b>not overriding procedure</b> Work (X: <b>in out</b> My_Root) <b>is abstract</b>;
+
+  <b>type</b> Int_Data <b>is new</b> My_Root <b>with record</b> ...;  -- <i>and similarly for Flt_Data</i>
+  <b>overriding procedure</b> Work (X: <b>in out</b> Int_Data);</pre>
+
+<p>Now the dispatching call looks like this:</p>
+
+<pre>  Work (My_Root'Class (Get (P).Data.<b>all</b>));</pre>
+
+<p>and, depending on the tag, the correct version of procedure
+<code>Work</code> will be called.
+(Note that we still have to do a type conversion, but in this case, it is
+a view conversion to the <i>parent's</i> class <code>My_Root'Class</code>,
+which  will always pass as long as all further types are derived from
+<code>My_Root</code>.)</p>
+
+<p>As a concluding question: Why don't we equip <code>Client_Data</code>
+with an abstract procedure <code>Work</code>?
+Well, who knows how the Smart_Pointers package will be used - and such
+a procedure will have to be overridden for all derived types, which will
+be irritating if there is no use for it.
+Of course, we could make it a null procedure, but the irritating fact
+remains that it might not be useful for the application at hand.</p>
+
+<!-- ==================================================================== -->
+
+<h3 align="center"><font color="#800000"><a name="Genericity">Genericity and Concurrency</a></font></h3>
+
+<p>For simplicity of discussion, the package <code>Smart_Pointers</code> has
+been presented as a library package.
+This has the effect that derivations from <code>Client_Data</code> have to
+be made also on library level (as shown in the examples above).</p>
+
+<p>Since this is impractical, the package in reality is generic and
+accordingly called <code>Generic_Smart_Pointers</code>.
+It may thus be instantiated at any level; any type derivations have to be
+made on the same level.
+See the test programs for examples.</p>
+
+<p>Furthermore, the code works fine only in sequential environments or as
+long as each data item is handled by exactly one task.
+In order to make it task-safe, the manipulation of the reference counter
+has to be protected.</p>
+
+<p>However, since task safety is not always needed and protection is time
+consuming, a generic parameter package <code>Counters</code> enables you
+choosing between a tasksafe and a sequential variant:</p>
+
+<pre><b>generic</b>
+  <b>with package</b> Counters <b>is new</b> Generic_Counters (<>);
+<b>package</b> Generic_Smart_Pointers <b>is</b>
+  ...  -- <i>visible specification as before</i></pre>
+
+<p>where <code>Generic_Counters</code> is a so-called generic signature
+package with only generic parameters and an empty specification:</p>
+
+<pre><b>generic
+  type</b> Counter <b>is limited private</b>;
+  <b>with procedure</b> Increase (This: <b>in out</b> Counter) <b>is</b> <>;
+  <b>with procedure</b> Decrease (This: <b>in out</b> Counter; is_Zero: <b>out</b> Boolean) <b>is</b> <>;
+<b>package</b> Generic_Counters <b>is
+end</b> Generic_Counters;</pre>
+
+<p>Instantiate <code>Generic_Counters</code> with either
+<code>Safe_Counters</code> (implemented by a protected object; this is why
+the counter has to be limited) for a concurrent environment or
+<code>Simple_Counters</code> (implemented by a pure number) for a sequential
+environment and use this instance as the generic actual for instantiating
+<code>Generic_Smart_Pointers</code>.
+Both packages have the same visible specification:</p>
+
+<pre><b>package</b> Safe/Simple_Counters <b>is</b>
+
+  <b>type</b> Counter <b>is limited private</b>;  -- <i>non-negative and properly initialized</i>
+
+  <b>procedure</b> Increase (This: <b>in out</b> Counter) <b>with</b> Inline;
+  <b>procedure</b> Decrease (This: <b>in out</b> Counter; is_Zero: <b>out</b> Boolean) <b>with</b> Inline;
+
+<b>private</b>
+
+  ...  -- <i>Rest not shown</i>
+
+<b>end</b> Safe/Simple_Counters;</pre>
+
+<p>The reference count in <code>Client_Data</code> is accordingly replaced
+by:</p>
+
+<pre>  <b>type</b> Client_Data <b>is abstract tagged record</b>
+    Count: Counter_Ptr := <b>new</b> Counters.Counter;
+  <b>end record</b>;</pre>
+
+<!-- ==================================================================== -->
+
+<h3 align="center"><font color="#800000"><a name="Child">Child Packages</a></font></h3>
+
+<p>As you have seen, you have to derive from Client_Data and thus have to know
+the specific type of the data accessed or use dispatching in order to access
+it again via a view conversion.
+Since this is awkward, two child packages with identical interfaces have been
+constructed on top of the above which hide all these details by being generic
+with respect to the data type they can access, one for definite and one for
+<font color="#00BB00">indefinite</font> types:</p>
+
+<pre><span><b>generic
+
+  type</b> T <font color="#00BB00">(&lt;&gt;)</font> <b>is private</b>;
+
+<b>package</b> Generic_Smart_Pointers.Generic_<font color="#00BB00">In</font>Definite_Pointers <b>is
+
+  type</b> Accessor (Data: <b>access</b> T) <b>is limited private</b>;
+
+  <b>type</b> Smart_Pointer <b>is private</b>;
+
+  <b>procedure</b> Set (Self: <b>in out</b> Smart_Pointer; Data: <b>in</b> T);
+  <b>function</b>  Get (Self: Smart_Pointer) <b>return</b> Accessor;
+
+  ...  -- <i>Rest not shown</i>
+
+<b>end</b> Generic_Smart_Pointers.Generic_<font color="#00BB00">In</font>Definite_Pointers;</span></pre>
+
+<!-- ==================================================================== -->
+
+<h3 align="center"><font color="#800000"><a name="2012">Ada 2012</a></font></h3>
+
+<p>Ada 2012 alleviates dereferences of the Accessor with the new aspect
+<code>Implicit_Dereference</code>:</p>
+
+<pre><span>  <b>type</b> Accessor (Data: <b>access</b> T) <b>is limited private <font color="#00BB00">with</font></b>
+    <font color="#00BB00">Implicit_Dereference =&gt; Data</font>;</span></pre>
+
+<p>Accessor is called a <i>reference type</i> (see RM 2012 4.1.5; see also
+<a href="http://www.adacore.com/adaanswers/gems/gem-123-implicit-dereferencing-in-ada-2012/">AdaCore Gem #123</a>).
+This aspect allows you to write:</p>
+
+<pre><span>  <b>declare</b>
+    A: Accessor := Get (P);  -- <i>a reference object</i>
+    X: T        := ...;
+  <b>begin</b>
+    <font color="#00BB00">A           := X;        -- <i>Assignment through a reference is equivalent to</i></font>
+    A.Data.all  := X;
+    <font color="#00BB00">X           := Get (P);  -- <i>Implicit dereference is equivalent to</i></font>
+    X           := Get (P).Data.all;
+  <b>end</b>;</span></pre>
+
+<p>Note that now the call of <code>Get (P)</code> is overloaded &ndash; it can
+denote the reference object or the data it references, the compiler will
+select the correct interpretation depending on context.
+Unfortunately this does not work for the basic package because of the needed
+type conversion in the dereference, which does not provide enough context
+for overload resolution.</p>
+
+<!-- ==================================================================== -->
+
+<h3 align="center"><font color="#800000"><a name="Test">Test</a></font></h3>
+
+<p>The Test directory shows several examples of use.
+Compile and run the test procedure <code>Run_All</code>; it must display a
+<i>Passed</i> message at the end.</p>
+
+<p>To compile, you have to uncomment in the files Selected_Counters and
+Selected_Counters_Get_Count the corresponding lines.</p>
+
+<!-- ==================================================================== -->
+
+<hr width="100%"/>
+
+<p><a name="Download" href="Smart_Pointers.zip">Download</a> together with
+test programs in zip format.</p>
+
+<p>You will get the <b>Ada 2012</b> version.
+To compile it with an <b>Ada 2005</b> compiler, just remove the
+<code>Implicit_Dereference</code> aspect shown in green above.</p>
+
+<!-- ==================================================================== -->
+
+<hr width="100%"/>
+
+<table>
+<tr>
+  <td><b>History</b></td>
+</tr>
+<tr>
+  <td valign="top">16.02.2018</td>
+  <td>Enable choice between tasksafe and sequential variant by means of
+      a generic signature package.</td>
+</tr>
+<tr>
+  <td>09.02.2018</td>
+  <td>Enable choice between tasksafe and sequential variant.</td>
+</tr>
+<tr>
+  <td valign="top">18.05.2016</td>
+  <td>Made Smart_Pointers generic: Generic_Smart_Pointers.
+      Type derivation from Client_Data need no more be on library level.
+      See test programs.
+  </td>
+</tr>
+<tr>
+  <td>10.10.2012</td>
+  <td>Improved text. Fixed link to Gem 123</td>
+</tr>
+<tr>
+  <td valign="top">30.06.2012</td>
+  <td>Added Deep_Copy to My_Smart_Indefinite_String_Pointers (was forgotten in previous release)</td>
+</tr>
+<tr>
+  <td>29.06.2012</td>
+  <td>Bug fix in Generic_Indefinite_Pointers</td>
+</tr>
+<tr>
+  <td>28.06.2012</td>
+  <td>GNAT GPL 2012 is out with full implementation of Ada 2012</td>
+</tr>
+<tr>
+  <td>16.09.2011</td>
+  <td>Example for dispatching added</td>
+</tr>
+<tr>
+  <td>09.07.2011</td>
+  <td>Free for client type added; preview to Ada 2012</td>
+</tr>
+<tr>
+  <td>31.05.2011</td>
+  <td>First release</td>
+</tr>
+</table>
+
+<hr width="100%" />
+
+<p align="center"><a href="http://validator.w3.org/check/referer">
+<img src="../Images/valid-xhtml10.gif" border="0" alt="Valid XHTML 1.0 Transitional!" height="31" width="88" />
+</a></p>
+
+</body>
+</html>

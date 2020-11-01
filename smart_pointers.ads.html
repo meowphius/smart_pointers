@@ -1,0 +1,28 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN" "http://www.w3.org/TR/REC-html40/strict.dtd"><html><head><title>smart_pointers.ads</title>
+   <link rel="shortcut icon" type="image/x-icon" href="../Images/Ada_Spec.ico">
+   <!-- Version Datum
+         1.0  09.06.2011  Automatically created and edited
+   //-->
+</head><body Text="#000000" BgColor="#FFFFFF"><PRE>
+<FONT COLOR="#0000FF">package </FONT>Smart_Pointers <FONT COLOR="#0000FF">is
+
+  </FONT><FONT COLOR="#0000FF">type </FONT>Client_Data <FONT COLOR="#0000FF">is abstract tagged private</FONT>;
+
+  <!--<FONT COLOR="#0000FF">type </FONT>Accessor <FONT COLOR="#FF00FF">(</FONT>Data: <FONT COLOR="#0000FF">access </FONT>Client_Data'<FONT COLOR="#808000">Class</FONT><FONT COLOR="#FF00FF">) </FONT><FONT COLOR="#0000FF">is limited private</FONT>;
+
+  //--><FONT COLOR="#0000FF">type </FONT>Smart_Pointer <FONT COLOR="#0000FF">is private</FONT>;
+
+  <FONT COLOR="#0000FF">procedure </FONT>Set <FONT COLOR="#FF00FF">(</FONT>Self: <FONT COLOR="#0000FF">in out </FONT>Smart_Pointer; Data: <FONT COLOR="#0000FF">in </FONT>Client_Data'<FONT COLOR="#808000">Class</FONT><FONT COLOR="#FF00FF">)</FONT>;
+
+  <FONT COLOR="#0000FF">function  </FONT>Get <FONT COLOR="#FF00FF">(</FONT>Self: Smart_Pointer<FONT COLOR="#FF00FF">) </FONT><FONT COLOR="#0000FF">return </FONT><FONT COLOR="#FF0000">&lt;What to return here to make access safe?&gt;</FONT>;
+
+  <FONT COLOR="#AAAAAA">... some more operations irrelevant to this discussion not shown</FONT>
+
+<FONT COLOR="#0000FF">private</FONT>
+
+  <FONT COLOR="#AAAAAA">... not shown</FONT>
+
+<FONT COLOR="#0000FF">end </FONT>Smart_Pointers;</PRE>
+
+<p><a href="Smart_Pointers.html#back"/>Back to text.</a></p>
+</body></html>
